@@ -7,6 +7,7 @@ from matplotlib.image import imread
 import numpy as np
 import torch.functional as F
 
+
 class myDataset(Dataset):
     def __init__(self,root_dir,image_size,transform=None):
 
@@ -21,6 +22,7 @@ class myDataset(Dataset):
             annotation_data=json.load(open(self.root_dir+'/'+sub_directory+'/annotation.json'))
             velocity=torch.from_numpy(np.array(annotation_data[0]['velocity']))
             position=torch.from_numpy(np.array(annotation_data[0]["position"]))
+            label=torch.cat((velocity,position),dim=0)
             dir_name=self.root_dir+'/'+sub_directory+'/imgs'
             inter_tensor=None
             for image in os.listdir(dir_name):
@@ -37,7 +39,7 @@ class myDataset(Dataset):
                        
                 else :
                     inter_tensor=depth_tensor.unsqueeze(0)
-            self.samples.append((inter_tensor,velocity,position))
+            self.samples.append((inter_tensor,label))
 
             break
     def __len__(self):
@@ -48,7 +50,7 @@ class myDataset(Dataset):
 
 class myModel(nn.Module):
     #hl_dims are hidden layer dimensions
-    def __init__(self,input_dims,hl_dim1,hl_dim2,batch_size=1,optim=torch.optim.Adam,output_dims=4):
+    def __init__(self,input_dims,hl_dim1,hl_dim2,batch_size=1,output_dims=4,loss=nn.MSELoss):
         super.__init__()
         self.input_dims=input_dims
         self.output_dims=output_dims
@@ -58,6 +60,7 @@ class myModel(nn.Module):
         self.fc1=nn.Linear(self.input_dims,self.hl_dim1)
         self.fc2=nn.Linear(self.hl_dim1,self.hl_dim2)
         self.fc3=nn.Linear(self.hl_dim2,self.output_dims)
+        self.loss=loss
 
     def forward(self,data):
         flattened_data=torch.flatten(data)
@@ -68,8 +71,12 @@ class myModel(nn.Module):
 
 
     def training_step(self,batch):
-        result=self(batch)
-        loss=torch.
+        input,label=batch
+        result=self(input)
+        loss=self.loss(result,label)
+        return loss
+    
+
 
 
 
@@ -80,13 +87,49 @@ class myModel(nn.Module):
         pass  
     
     
+def to_device(data, device):
+    """Move tensor(s) to chosen device"""
+    if isinstance(data, (list,tuple)):
         
+        return [to_device(x, device) for x in data]
+
+    return data.to(device, non_blocking=True)
+
+class DeviceDataLoader():
+    """Wrap a dataloader to move data to a device"""
+    def __init__(self, dl, device):
+        self.dl = dl
+        self.device = device
+        
+    def __iter__(self):
+        """Yield a batch of data after moving it to device"""
+        for b in self.dl: 
+            yield to_device(b, self.device)
+
+    def __len__(self):
+        """Number of batches"""
+        return len(self.dl)
+
+
+device= torch.device('cuda') if t.cuda.is_available() else torch.device('cpu')        
 
 folder_dir=os.path.expanduser('~')+'/gogly/Depth2/All/'
-datas=myDataset(folder_dir,(240,320))
-print(datas.samples[0][0].size(),datas.samples[0][1],datas.samples[0][2])
-#train_dl=DataLoader(datas,batch_size=1,shuffle=True)
-model=myModel(1,2,3)
+dataset=myDataset(folder_dir,(240,320))
+train_dl=DataLoader(dataset,batch_size=1,shuffle=True,num_workers=2)
+train_dl=DeviceDataLoader(train_dl,device)
+model=myModel()
+
+
+def fit(epochs,model,train_dl,learning_rate,optim=torch.optim.SGD):
+    optimizer=torch.optim.Adam(model.parameters(),learning_rate)
+    history=[]
+    for epoch in range(epochs):
+        for batch in train_dl:
+            loss=model.training_step(batch)
+            loss.backward()
+        optimizer.step()
+
 
 print(model)
+
 
