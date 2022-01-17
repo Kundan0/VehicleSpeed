@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 class myModel(nn.Module):
     #hl_dims are hidden layer dimensions
     def __init__(self,size=(128,72),hl_dim1=512,hl_dim2=256,hl_dim3=128,output_dims=4,loss=nn.MSELoss()):
@@ -15,7 +16,7 @@ class myModel(nn.Module):
         self.loss=loss
         self.n1=nn.Sequential(
             
-            nn.Linear(5*self.size[0]*self.size[1],self.output_dims),
+            nn.Linear(4*self.size[0]*self.size[1],self.output_dims),
             
 
         )
@@ -37,6 +38,16 @@ class myModel(nn.Module):
         
         return loss
     
-    def evaluate(self):
-        pass  
+    def validation_step(self,batch):
+        image,label=batch
+        result=self(image)
+        loss=self.loss(result,label)
+        return {'validation_loss':loss.detach()}
+    
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x['val_loss'] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+        
+        return {'val_loss': epoch_loss.item()}
+        
     
